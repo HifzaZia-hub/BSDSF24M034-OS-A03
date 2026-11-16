@@ -5,15 +5,30 @@ int main() {
     char** arglist;
 
     while ((cmdline = read_cmd(PROMPT, stdin)) != NULL) {
+        
+        // --- NEW: Handle !n (Re-execution) ---
+        if (cmdline[0] == '!') {
+            int n = atoi(&cmdline[1]); // Convert the number after ! to an int
+            if (n > 0 && n <= history_count) {
+                // Get the command from history and replace cmdline
+                free(cmdline);
+                cmdline = strdup(cmd_history[n - 1]);
+                printf("%s\n", cmdline); // Print the command so user sees it
+            } else {
+                printf("Error: History index out of bounds.\n");
+                free(cmdline);
+                continue; // Skip execution, go back to prompt
+            }
+        }
+
+        // Add the (possibly updated) command to history
+        add_to_history(cmdline);
+
         if ((arglist = tokenize(cmdline)) != NULL) {
-            
-            // NEW: Check if it's a built-in command first
-            // handle_builtin returns 1 if it handled it, 0 if it's not a built-in.
             if (handle_builtin(arglist) == 0) {
-                execute(arglist); // Only fork/exec if it's NOT a built-in
+                execute(arglist);
             }
 
-            // Free the memory allocated by tokenize()
             for (int i = 0; arglist[i] != NULL; i++) {
                 free(arglist[i]);
             }

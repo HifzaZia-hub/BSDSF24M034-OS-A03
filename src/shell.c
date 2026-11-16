@@ -1,5 +1,24 @@
 #include "shell.h"
+char* cmd_history[HISTORY_SIZE];
+int history_count = 0;
 
+void add_to_history(char* cmdline) {
+    // Don't save empty commands
+    if (cmdline == NULL || strlen(cmdline) == 0) return;
+
+    // If history is full, shift everything up to make room
+    if (history_count >= HISTORY_SIZE) {
+        free(cmd_history[0]); // Free the oldest command
+        for (int i = 0; i < HISTORY_SIZE - 1; i++) {
+            cmd_history[i] = cmd_history[i + 1];
+        }
+        history_count = HISTORY_SIZE - 1;
+    }
+    
+    // Save a copy of the command
+    cmd_history[history_count] = strdup(cmdline);
+    history_count++;
+}
 char* read_cmd(char* prompt, FILE* fp) {
     printf("%s", prompt);
     char* cmdline = (char*) malloc(sizeof(char) * MAX_LEN);
@@ -94,6 +113,13 @@ int handle_builtin(char** arglist) {
         return 1; 
     }
 
+         // 5. HISTORY
+    else if (strcmp(arglist[0], "history") == 0) {
+        for (int i = 0; i < history_count; i++) {
+            printf("%d: %s\n", i + 1, cmd_history[i]);
+        }
+        return 1;
+    }
     // If we reach here, it's not a built-in command
     return 0;
 }
