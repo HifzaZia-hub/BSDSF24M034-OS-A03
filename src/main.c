@@ -1,27 +1,41 @@
 #include "shell.h"
+#include <readline/readline.h>
+#include <readline/history.h>
 
 int main() {
     char* cmdline;
     char** arglist;
 
-    while ((cmdline = read_cmd(PROMPT, stdin)) != NULL) {
+    // Enable default Readline tab completion (for files/folders)
+    rl_bind_key('\t', rl_complete);
+    using_history();
+
+    while ((cmdline = readline(PROMPT)) != NULL) {
         
-        // --- NEW: Handle !n (Re-execution) ---
+        // If the user presses Enter without typing anything, skip
+        if (strlen(cmdline) == 0) {
+            free(cmdline);
+            continue;
+        }
+
+        // Add the command to Readline's internal history (for Up/Down arrows)
+        add_history(cmdline);
+
+        // --- Keep the !n re-execution logic ---
         if (cmdline[0] == '!') {
-            int n = atoi(&cmdline[1]); // Convert the number after ! to an int
+            int n = atoi(&cmdline[1]);
             if (n > 0 && n <= history_count) {
-                // Get the command from history and replace cmdline
                 free(cmdline);
                 cmdline = strdup(cmd_history[n - 1]);
-                printf("%s\n", cmdline); // Print the command so user sees it
+                printf("%s\n", cmdline); 
             } else {
                 printf("Error: History index out of bounds.\n");
                 free(cmdline);
-                continue; // Skip execution, go back to prompt
+                continue; 
             }
         }
 
-        // Add the (possibly updated) command to history
+        // Add to our custom history array (for the "history" command)
         add_to_history(cmdline);
 
         if ((arglist = tokenize(cmdline)) != NULL) {
