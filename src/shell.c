@@ -60,3 +60,40 @@ char** tokenize(char* cmdline) {
     arglist[argnum] = NULL;
     return arglist;
 }
+int handle_builtin(char** arglist) {
+    // 1. EXIT
+    if (strcmp(arglist[0], "exit") == 0) {
+        exit(0); // Terminate the shell gracefully
+    }
+    
+    // 2. CD
+    else if (strcmp(arglist[0], "cd") == 0) {
+        if (arglist[1] == NULL) {
+            chdir(getenv("HOME")); // If just "cd", go to home directory
+        } else {
+            if (chdir(arglist[1]) != 0) {
+                perror("cd failed"); // Handle bad directories
+            }
+        }
+        return 1; // Return 1 to tell main.c "I handled this"
+    }
+    
+    // 3. HELP
+    else if (strcmp(arglist[0], "help") == 0) {
+        printf("Built-in commands:\n");
+        printf("  cd <dir>  - Change directory\n");
+        printf("  exit      - Exit the shell\n");
+        printf("  help      - Show this help message\n");
+        printf("  jobs      - List background jobs\n");
+        return 1; 
+    }
+    
+    // 4. JOBS
+    else if (strcmp(arglist[0], "jobs") == 0) {
+        printf("Job control not yet implemented.\n");
+        return 1; 
+    }
+
+    // If we reach here, it's not a built-in command
+    return 0;
+}
