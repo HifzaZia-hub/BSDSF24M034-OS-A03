@@ -2,18 +2,12 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 
-// --- Pipes function ---
 void execute_pipe(char** arglist) {
     int pipefd[2];
-    if (pipe(pipefd) == -1) {
-        perror("pipe failed");
-        return;
-    }
+    if (pipe(pipefd) == -1) { perror("pipe failed"); return; }
 
     int i = 0;
-    while (arglist[i] != NULL && strcmp(arglist[i], "|") != 0) {
-        i++;
-    }
+    while (arglist[i] != NULL && strcmp(arglist[i], "|") != 0) i++;
     arglist[i] = NULL; 
 
     char** left_cmd = arglist;
@@ -21,42 +15,23 @@ void execute_pipe(char** arglist) {
 
     int cpid1 = fork();
     if (cpid1 == 0) {
-        dup2(pipefd[1], STDOUT_FILENO); 
-        close(pipefd[0]); 
-        close(pipefd[1]);
-        execvp(left_cmd[0], left_cmd);
-        exit(1);
+        dup2(pipefd[1], STDOUT_FILENO); close(pipefd[0]); close(pipefd[1]);
+        execvp(left_cmd[0], left_cmd); exit(1);
     }
-
     int cpid2 = fork();
     if (cpid2 == 0) {
-        dup2(pipefd[0], STDIN_FILENO); 
-        close(pipefd[1]); 
-        close(pipefd[0]);
-        execvp(right_cmd[0], right_cmd);
-        exit(1);
+        dup2(pipefd[0], STDIN_FILENO); close(pipefd[1]); close(pipefd[0]);
+        execvp(right_cmd[0], right_cmd); exit(1);
     }
-
-    close(pipefd[0]);
-    close(pipefd[1]);
-    waitpid(cpid1, NULL, 0);
-    waitpid(cpid2, NULL, 0);
+    close(pipefd[0]); close(pipefd[1]);
+    waitpid(cpid1, NULL, 0); waitpid(cpid2, NULL, 0);
 }
 
-// --- Function to process a single command (handles &, |, builtins, external) ---
 void process_command(char* cmdline) {
     int is_background = 0;
-    
-    // Check if it ends with '&'
     int len = strlen(cmdline);
-    while (len > 0 && (cmdline[len-1] == ' ' || cmdline[len-1] == '\t')) {
-        len--;
-    }
-    if (len > 0 && cmdline[len-1] == '&') {
-        is_background = 1;
-        cmdline[len-1] = '\0'; // Remove the '&' from the string
-    }
-
+    while (len > 0 && (cmdline[len-1] == ' ' || cmdline[len-1] == '\t')) len--;
+    if (len > 0 && cmdline[len-1] == '&') { is_background = 1; cmdline[len-1] = '\0'; }
     if (strlen(cmdline) == 0) return;
 
     char** arglist = tokenize(cmdline);
@@ -64,37 +39,87 @@ void process_command(char* cmdline) {
 
     if (handle_builtin(arglist) == 0) {
         if (is_background) {
-            // Background execution
             int cpid = fork();
-            if (cpid == 0) {
-                setpgid(0, 0); // Create a new process group for background job
-                execvp(arglist[0], arglist);
-                perror("Command not found");
-                exit(1);
-            }
+            if (cpid == 0) { setpgid(0, 0); execvp(arglist[0], arglist); perror("Command not found"); exit(1); }
             printf("[Background] PID: %d\n", cpid);
         } else {
-            // Foreground execution
             int has_pipe = 0;
             for (int i = 0; arglist[i] != NULL; i++) {
-                if (strcmp(arglist[i], "|") == 0) {
-                    has_pipe = 1;
-                    break;
-                }
+                if (strcmp(arglist[i], "|") == 0) { has_pipe = 1; break; }
             }
-            
-            if (has_pipe) {
-                execute_pipe(arglist);
-            } else {
-                execute(arglist);
-            }
+            if (has_pipe) execute_pipe(arglist);
+            else execute(arglist);
+        }
+    }
+    for (int i = 0; arglist[i] != NULL; i++) free(arglist[i]);
+    free(arglist);
+}
+
+int execute_and_get_status(char* cmdline) {
+    char** arglist = tokenize(cmdline);
+    if (arglist == NULL) return 1;
+    int status = 1;
+    if (handle_builtin(arglist) == 0) {
+        int cpid = fork();
+        if (cpid == 0) { execvp(arglist[0], arglist); exit(1); } 
+        else {
+            waitpid(cpid, &status, 0);
+            if (WIFEXITED(status)) status = WEXITSTATUS(status);
+        }
+    }
+    for (int i = 0; arglist[i] != NULL; i++) free(arglist[i]);
+    free(arglist);
+    return status;
+}
+
+void handle_if_block(char* first_line) {
+    char* then_block[10];
+    char* else_block[10];
+    int then_count = 0, else_count = 0;
+    int in_else = 0;
+    char buffer[MAX_LEN];
+
+    // 1. Read the block
+    while (1) {
+        printf("> ");
+        fflush(stdout);
+        
+        if (fgets(buffer, MAX_LEN, stdin) == NULL) break;
+        
+        // Remove newline
+        buffer[strcspn(buffer, "\n")] = 0;
+        
+        // If the line is empty (just a newline), skip it!
+        if (strlen(buffer) == 0) continue;
+
+        char keyword[20];
+        sscanf(buffer, "%s", keyword);
+
+        if (strcmp(keyword, "fi") == 0) break;
+        if (strcmp(keyword, "then") == 0) continue;
+        if (strcmp(keyword, "else") == 0) { in_else = 1; continue; }
+
+        if (in_else) {
+            else_block[else_count++] = strdup(buffer);
+        } else {
+            then_block[then_count++] = strdup(buffer);
         }
     }
 
-    for (int i = 0; arglist[i] != NULL; i++) {
-        free(arglist[i]);
+    // 2. Execute 'if' command
+    char* if_cmd = first_line;
+    while (*if_cmd == ' ' || *if_cmd == '\t') if_cmd++; // Skip leading spaces
+    if_cmd += 2; // Skip "if"
+    while (*if_cmd == ' ' || *if_cmd == '\t') if_cmd++; // Skip spaces after "if"
+
+    int status = execute_and_get_status(if_cmd);
+
+    // 3. Execute appropriate block
+    if (status == 0) {
+        for (int i = 0; i < then_count; i++) { process_command(then_block[i]); free(then_block[i]); }
+    } else {
+        for (int i = 0; i < else_count; i++) { process_command(else_block[i]); free(else_block[i]); }
     }
-    free(arglist);
 }
 
 int main() {
@@ -105,18 +130,12 @@ int main() {
     using_history();
 
     while (1) {
-        // Reap Zombies (Background Jobs)
-        while (waitpid(-1, &status, WNOHANG) > 0) {
-            // Child reaped silently.
-        }
+        while (waitpid(-1, &status, WNOHANG) > 0) {}
 
         cmdline = readline(PROMPT);
-        if (cmdline == NULL) break; // Ctrl+D
+        if (cmdline == NULL) break;
         
-        if (strlen(cmdline) == 0) {
-            free(cmdline);
-            continue;
-        }
+        if (strlen(cmdline) == 0) { free(cmdline); continue; }
 
         add_history(cmdline);
 
@@ -127,29 +146,28 @@ int main() {
                 cmdline = strdup(cmd_history[n - 1]);
                 printf("%s\n", cmdline); 
             } else {
-                printf("Error: History index out of bounds.\n");
-                free(cmdline);
-                continue; 
+                printf("Error: History index out of bounds.\n"); free(cmdline); continue; 
             }
         }
-
         add_to_history(cmdline);
 
-        // Handle Semicolon Chaining (;)
-        char* saveptr;
-        char* cmd = strtok_r(cmdline, ";", &saveptr);
+        // Safely check if the command starts with "if"
+        char* temp = cmdline;
+        while (*temp == ' ' || *temp == '\t') temp++; // Skip leading spaces
         
-        while (cmd != NULL) {
-            while (*cmd == ' ' || *cmd == '\t') cmd++;
-            if (strlen(cmd) > 0) {
-                process_command(cmd);
+        if (strncmp(temp, "if ", 3) == 0) {
+            handle_if_block(cmdline);
+        } else {
+            char* saveptr;
+            char* cmd = strtok_r(cmdline, ";", &saveptr);
+            while (cmd != NULL) {
+                while (*cmd == ' ' || *cmd == '\t') cmd++;
+                if (strlen(cmd) > 0) process_command(cmd);
+                cmd = strtok_r(NULL, ";", &saveptr);
             }
-            cmd = strtok_r(NULL, ";", &saveptr);
         }
-
         free(cmdline);
     }
-
     printf("\nShell exited.\n");
     return 0;
 }
