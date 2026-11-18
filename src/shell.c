@@ -3,6 +3,8 @@
 char* cmd_history[HISTORY_SIZE];
 int history_count = 0;
 
+Variable *var_list = NULL;
+
 char* read_cmd(char* prompt, FILE* fp) {
     printf("%s", prompt);
     char* cmdline = (char*) malloc(sizeof(char) * MAX_LEN);
@@ -79,6 +81,45 @@ void add_to_history(char* cmdline) {
     history_count++;
 }
 
+void set_variable(char* name, char* value) {
+    Variable *curr = var_list;
+    while (curr != NULL) {
+        if (strcmp(curr->name, name) == 0) {
+            free(curr->value);
+            curr->value = strdup(value);
+            return;
+        }
+        curr = curr->next;
+    }
+    Variable *new_var = (Variable*)malloc(sizeof(Variable));
+    new_var->name = strdup(name);
+    new_var->value = strdup(value);
+    new_var->next = var_list;
+    var_list = new_var;
+}
+
+char* get_variable(char* name) {
+    Variable *curr = var_list;
+    while (curr != NULL) {
+        if (strcmp(curr->name, name) == 0) return curr->value;
+        curr = curr->next;
+    }
+    return NULL;
+}
+
+void expand_variables(char** arglist) {
+    for (int i = 0; arglist[i] != NULL; i++) {
+        if (arglist[i][0] == '$') {
+            char* var_name = arglist[i] + 1;
+            char* val = get_variable(var_name);
+            if (val != NULL) {
+                free(arglist[i]);
+                arglist[i] = strdup(val);
+            }
+        }
+    }
+}
+
 int handle_builtin(char** arglist) {
     if (strcmp(arglist[0], "exit") == 0) {
         exit(0); 
@@ -87,9 +128,7 @@ int handle_builtin(char** arglist) {
         if (arglist[1] == NULL) {
             chdir(getenv("HOME")); 
         } else {
-            if (chdir(arglist[1]) != 0) {
-                perror("cd failed"); 
-            }
+            if (chdir(arglist[1]) != 0) perror("cd failed"); 
         }
         return 1; 
     }
@@ -100,6 +139,7 @@ int handle_builtin(char** arglist) {
         printf("  help      - Show this help message\n");
         printf("  jobs      - List background jobs\n");
         printf("  history   - Show command history\n");
+        printf("  set       - Show all variables\n");
         return 1; 
     }
     else if (strcmp(arglist[0], "jobs") == 0) {
@@ -109,6 +149,14 @@ int handle_builtin(char** arglist) {
     else if (strcmp(arglist[0], "history") == 0) {
         for (int i = 0; i < history_count; i++) {
             printf("%d: %s\n", i + 1, cmd_history[i]);
+        }
+        return 1;
+    }
+    else if (strcmp(arglist[0], "set") == 0) {
+        Variable *curr = var_list;
+        while (curr != NULL) {
+            printf("%s=%s\n", curr->name, curr->value);
+            curr = curr->next;
         }
         return 1;
     }

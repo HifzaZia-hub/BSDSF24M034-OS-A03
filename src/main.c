@@ -34,8 +34,27 @@ void process_command(char* cmdline) {
     if (len > 0 && cmdline[len-1] == '&') { is_background = 1; cmdline[len-1] = '\0'; }
     if (strlen(cmdline) == 0) return;
 
+    // Check for variable assignment (e.g. MSG=Hello)
+    char* eq = strchr(cmdline, '=');
+    if (eq != NULL) {
+        *eq = '\0'; 
+        char* name = cmdline;
+        char* value = eq + 1;
+        int valid = 1;
+        for (int i = 0; name[i] != '\0'; i++) {
+            if (name[i] == ' ' || name[i] == '\t') { valid = 0; break; }
+        }
+        if (valid) {
+            set_variable(name, value);
+            return;
+        }
+        *eq = '='; 
+    }
+
     char** arglist = tokenize(cmdline);
     if (arglist == NULL) return;
+
+    expand_variables(arglist);
 
     if (handle_builtin(arglist) == 0) {
         if (is_background) {
@@ -79,17 +98,10 @@ void handle_if_block(char* first_line) {
     int in_else = 0;
     char buffer[MAX_LEN];
 
-    // 1. Read the block
     while (1) {
-        printf("> ");
-        fflush(stdout);
-        
+        printf("> "); fflush(stdout);
         if (fgets(buffer, MAX_LEN, stdin) == NULL) break;
-        
-        // Remove newline
         buffer[strcspn(buffer, "\n")] = 0;
-        
-        // If the line is empty (just a newline), skip it!
         if (strlen(buffer) == 0) continue;
 
         char keyword[20];
@@ -99,22 +111,17 @@ void handle_if_block(char* first_line) {
         if (strcmp(keyword, "then") == 0) continue;
         if (strcmp(keyword, "else") == 0) { in_else = 1; continue; }
 
-        if (in_else) {
-            else_block[else_count++] = strdup(buffer);
-        } else {
-            then_block[then_count++] = strdup(buffer);
-        }
+        if (in_else) else_block[else_count++] = strdup(buffer);
+        else then_block[then_count++] = strdup(buffer);
     }
 
-    // 2. Execute 'if' command
     char* if_cmd = first_line;
-    while (*if_cmd == ' ' || *if_cmd == '\t') if_cmd++; // Skip leading spaces
-    if_cmd += 2; // Skip "if"
-    while (*if_cmd == ' ' || *if_cmd == '\t') if_cmd++; // Skip spaces after "if"
+    while (*if_cmd == ' ' || *if_cmd == '\t') if_cmd++; 
+    if_cmd += 2; 
+    while (*if_cmd == ' ' || *if_cmd == '\t') if_cmd++; 
 
     int status = execute_and_get_status(if_cmd);
 
-    // 3. Execute appropriate block
     if (status == 0) {
         for (int i = 0; i < then_count; i++) { process_command(then_block[i]); free(then_block[i]); }
     } else {
@@ -134,7 +141,6 @@ int main() {
 
         cmdline = readline(PROMPT);
         if (cmdline == NULL) break;
-        
         if (strlen(cmdline) == 0) { free(cmdline); continue; }
 
         add_history(cmdline);
@@ -142,8 +148,7 @@ int main() {
         if (cmdline[0] == '!') {
             int n = atoi(&cmdline[1]);
             if (n > 0 && n <= history_count) {
-                free(cmdline);
-                cmdline = strdup(cmd_history[n - 1]);
+                free(cmdline); cmdline = strdup(cmd_history[n - 1]);
                 printf("%s\n", cmdline); 
             } else {
                 printf("Error: History index out of bounds.\n"); free(cmdline); continue; 
@@ -151,9 +156,8 @@ int main() {
         }
         add_to_history(cmdline);
 
-        // Safely check if the command starts with "if"
         char* temp = cmdline;
-        while (*temp == ' ' || *temp == '\t') temp++; // Skip leading spaces
+        while (*temp == ' ' || *temp == '\t') temp++; 
         
         if (strncmp(temp, "if ", 3) == 0) {
             handle_if_block(cmdline);

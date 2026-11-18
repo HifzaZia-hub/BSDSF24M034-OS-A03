@@ -16,9 +16,18 @@
 #define PROMPT "FCIT> "
 #define HISTORY_SIZE 20
 
-// Global history variables
+// History
 extern char* cmd_history[HISTORY_SIZE];
 extern int history_count;
+
+// Variables Linked List
+typedef struct Variable {
+    char *name;
+    char *value;
+    struct Variable *next;
+} Variable;
+
+extern Variable *var_list;
 
 // Function prototypes
 char* read_cmd(char* prompt, FILE* fp);
@@ -26,5 +35,10 @@ char** tokenize(char* cmdline);
 int execute(char** arglist);
 int handle_builtin(char** arglist);
 void add_to_history(char* cmdline);
+
+// Variable functions
+void set_variable(char* name, char* value);
+char* get_variable(char* name);
+void expand_variables(char** arglist);
 
 #endif // SHELL_H
